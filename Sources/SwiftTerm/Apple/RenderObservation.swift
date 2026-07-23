@@ -174,6 +174,58 @@ public struct RenderedGlyph: Codable, Equatable {
         case foregroundRGBA
     }
 
+    private enum DecodingKeys: String, CodingKey {
+        case row
+        case segmentColumn
+        case slotColumn
+        case slotWidth
+        case sourceUtf16Location
+        case sourceUtf16Length
+        case sourceScalars
+        case runStatusRaw
+        case rightToLeft
+        case fontPostScriptName
+        case fontFullName
+        case fontVersion
+        case fontFileSha256
+        case pointSize
+        case affineMatrix
+        case glyphId
+        case glyphNameIfAvailable
+        case positionPoints
+        case advancePoints
+        case foregroundRgba
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingKeys.self)
+        self.init(
+            row: try container.decode(Int.self, forKey: .row),
+            segmentColumn: try container.decode(Int.self, forKey: .segmentColumn),
+            slotColumn: try container.decode(Int.self, forKey: .slotColumn),
+            slotWidth: try container.decode(Int.self, forKey: .slotWidth),
+            sourceUTF16Location: try container.decode(Int.self, forKey: .sourceUtf16Location),
+            sourceUTF16Length: try container.decode(Int.self, forKey: .sourceUtf16Length),
+            sourceScalars: try container.decode([UInt32].self, forKey: .sourceScalars),
+            runStatusRaw: try container.decode(UInt32.self, forKey: .runStatusRaw),
+            rightToLeft: try container.decode(Bool.self, forKey: .rightToLeft),
+            fontPostScriptName: try container.decode(String.self, forKey: .fontPostScriptName),
+            fontFullName: try container.decode(String.self, forKey: .fontFullName),
+            fontVersion: try container.decode(String.self, forKey: .fontVersion),
+            fontFileSHA256: try container.decode(String.self, forKey: .fontFileSha256),
+            pointSize: try container.decode(Double.self, forKey: .pointSize),
+            affineMatrix: try container.decode(RenderAffine.self, forKey: .affineMatrix),
+            glyphID: try container.decode(UInt16.self, forKey: .glyphId),
+            glyphNameIfAvailable: try container.decodeIfPresent(
+                String.self,
+                forKey: .glyphNameIfAvailable
+            ),
+            positionPoints: try container.decode(RenderPoint.self, forKey: .positionPoints),
+            advancePoints: try container.decode(RenderSize.self, forKey: .advancePoints),
+            foregroundRGBA: try container.decode(RenderRGBA.self, forKey: .foregroundRgba)
+        )
+    }
+
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(row, forKey: .row)

@@ -103,6 +103,35 @@ func runArtifactTests() throws {
     let decoded = try CanonicalJSON.decode(CaptureArtifact.self, from: first)
     try captureRequire(decoded == artifact, "artifact schema must round-trip exactly")
 
+    let glyph = RenderedGlyph(
+        row: 0,
+        segmentColumn: 0,
+        slotColumn: 0,
+        slotWidth: 1,
+        sourceUTF16Location: 2,
+        sourceUTF16Length: 1,
+        sourceScalars: [0x05d0],
+        runStatusRaw: 1,
+        rightToLeft: true,
+        fontPostScriptName: "Fallback",
+        fontFullName: "Fallback Regular",
+        fontVersion: "1",
+        fontFileSHA256: String(repeating: "e", count: 64),
+        pointSize: 18,
+        affineMatrix: RenderAffine(a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0),
+        glyphID: 42,
+        glyphNameIfAvailable: "alef",
+        positionPoints: RenderPoint(x: 0, y: 0),
+        advancePoints: RenderSize(width: 11, height: 0),
+        foregroundRGBA: RenderRGBA(red: 1, green: 1, blue: 1, alpha: 1)
+    )
+    let glyphBytes = try CanonicalJSON.encode(glyph)
+    let decodedGlyph = try CanonicalJSON.decode(RenderedGlyph.self, from: glyphBytes)
+    try captureRequire(
+        decodedGlyph == glyph,
+        "rendered glyph acronym fields must round-trip through canonical snake-case JSON"
+    )
+
     let root = URL(fileURLWithPath: ".build/test-artifact", isDirectory: true)
     try? FileManager.default.removeItem(at: root)
     let url = root.appendingPathComponent("capture.json")
