@@ -92,9 +92,9 @@ private func structural(_ frames: [ObservedFrame]) -> [[String]] {
 }
 
 func runDrawObservationTests() throws {
-    let body = "אאב | سلام | ب | ⠿ | █░▄ | ─\r\n"
-    let neighbor = "אאב | سلام | بب | ⠿ | █░▄ | ─\r\n"
-    let erased = "אאב | سلام | ب  | ⠿ | █░▄ | ─\r\n"
+    let body = "A | אאב | سلام | ب | ⠿ | █░▄ | ─\r\n"
+    let neighbor = "A | אאב | سلام | بب | ⠿ | █░▄ | ─\r\n"
+    let erased = "A | אאב | سلام | ب  | ⠿ | █░▄ | ─\r\n"
     let payloads = [syncFrame(body), syncFrame(neighbor), syncFrame(erased)]
 
     let (wholeView, wholeObserver) = try makeObservedView()
@@ -161,7 +161,31 @@ func runDrawObservationTests() throws {
     let pixels = try OffscreenRenderer.render(view: wholeView)
     let frameInfo = wholeView.renderFrameInfo()
     let firstCell = pixels.cellRGBA(column: 0, row: 0, frame: frameInfo)
+    let belowFirstCell = pixels.cellRGBA(column: 0, row: 1, frame: frameInfo)
     let blankCell = pixels.cellRGBA(column: 99, row: 19, frame: frameInfo)
-    try captureRequire(firstCell != nil && blankCell != nil, "literal cell crops must be available")
+    try captureRequire(
+        firstCell != nil && belowFirstCell != nil && blankCell != nil,
+        "literal cell crops must be available"
+    )
     try captureRequire(firstCell != blankCell, "visible and blank cells must retain different literal pixels")
+    try captureRequire(
+        firstCell != belowFirstCell,
+        "cell crops must preserve top-to-bottom terminal row coordinates"
+    )
+
+    let (isolateView, isolateObserver) = try makeObservedView()
+    isolateView.getTerminal().feed(buffer: syncFrame("A \u{2066}א\u{2069}")[...])
+    let isolateCell = isolateView.getTerminal().getCharData(col: 2, row: 0)
+    try captureRequire(isolateCell != nil, "isolated Hebrew cell must exist")
+    try captureRequire(
+        isolateView.getTerminal().getRenderString(for: isolateCell!) == "\u{2066}א\u{2069}",
+        "zero-width directional isolates must remain attached to the rendered cell source"
+    )
+    let isolateGlyph = isolateObserver.frames.first?.glyphs.first {
+        $0.sourceScalars.contains(0x05D0)
+    }
+    try captureRequire(
+        isolateGlyph?.slotColumn == 2 && isolateGlyph?.rightToLeft == true,
+        "directional isolates must keep the Hebrew glyph in its intended visual cell"
+    )
 }

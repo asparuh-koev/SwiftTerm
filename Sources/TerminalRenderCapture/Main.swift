@@ -93,8 +93,8 @@ enum TerminalRenderCaptureMain {
         )
         transport.run()
 
-        if let png = options.png {
-            try? writePNG(view: transport.view, to: png)
+        if let png = options.png, let pixels = coordinator.lastAuthoritativePixels {
+            try? writePNG(pixels: pixels, to: png)
         }
 
         var status: EvidenceStatus
@@ -485,11 +485,7 @@ enum TerminalRenderCaptureMain {
         }
     }
 
-    private static func writePNG(view: TerminalView, to url: URL) throws {
-        let observer = view.renderObserver
-        view.renderObserver = nil
-        defer { view.renderObserver = observer }
-        let pixels = try OffscreenRenderer.render(view: view)
+    private static func writePNG(pixels: OffscreenFramePixels, to url: URL) throws {
         guard
             let provider = CGDataProvider(data: pixels.rgba as CFData),
             let image = CGImage(

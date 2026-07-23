@@ -28,6 +28,7 @@ final class CaptureCoordinator: TerminalRenderObserver {
     private(set) var failure: FailureReason?
     private(set) var truncation: CaptureLimit?
     private(set) var lastFrameInfo: RenderFrameInfo?
+    private(set) var lastAuthoritativePixels: OffscreenFramePixels?
 
     init(
         scenario: ValidatedScenario?,
@@ -89,6 +90,7 @@ final class CaptureCoordinator: TerminalRenderObserver {
             transaction = nil
             observedFrameCount += 1
             lastFrameInfo = completed.info
+            lastAuthoritativePixels = pixels
             if shouldRetain(ordinal: ordinal) {
                 try commit(
                     ordinal: ordinal,
@@ -206,10 +208,18 @@ final class CaptureCoordinator: TerminalRenderObserver {
         var drawCalls: [DrawCall] = []
         var glyphIds: [CellPoint: [UInt32]] = [:]
         var primitiveIds: [CellPoint: [UInt32]] = [:]
-        for (index, draw) in transaction.draws.enumerated() {
-            let id = UInt32(index)
+        for draw in transaction.draws {
             switch draw {
             case let .glyph(glyph):
+                let source = String(
+                    String.UnicodeScalarView(
+                        glyph.sourceScalars.compactMap(UnicodeScalar.init)
+                    )
+                )
+                guard source.contains(where: { !$0.isWhitespace }) else {
+                    continue
+                }
+                let id = UInt32(drawCalls.count)
                 guard glyphAtlasBuilder.insert(glyph) != nil else {
                     fail(code: "draw_failed", detail: "glyph rasterization failed")
                     return
@@ -225,6 +235,7 @@ final class CaptureCoordinator: TerminalRenderObserver {
                     ].append(id)
                 }
             case let .primitive(primitive):
+                let id = UInt32(drawCalls.count)
                 drawCalls.append(.primitive(id: id, value: primitive))
                 let row: Int
                 let column: Int
@@ -269,7 +280,7 @@ final class CaptureCoordinator: TerminalRenderObserver {
                 let width = UInt8(max(0, Int(data?.width ?? 1)))
                 let text: String
                 if let data, data.width != 0 {
-                    text = String(terminal.getCharacter(for: data)).replacingOccurrences(of: "\0", with: "")
+                    text = terminal.getRenderString(for: data).replacingOccurrences(of: "\0", with: "")
                 } else {
                     text = ""
                 }

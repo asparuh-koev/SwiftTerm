@@ -780,6 +780,7 @@ extension TerminalView {
             pendingAttrs = currentAttributes
 
             let character = ch.code == 0 ? " " : terminal.getCharacter(for: ch)
+            let renderString = ch.code == 0 ? " " : terminal.getRenderString(for: ch)
 
             // Renders box drawing characters independently of the font
             // U+2500...U+257F
@@ -823,7 +824,7 @@ extension TerminalView {
                 previousPlaceholderAttribute = attr
             } else {
                 // Common path: just accumulate into the batch
-                pendingText.append(character)
+                pendingText.append(contentsOf: renderString)
                 if UnicodeUtil.prefersTextPresentation(character) {
                     // Steer font fallback away from Apple Color Emoji for
                     // default-text-presentation symbols (see prefersTextPresentation).

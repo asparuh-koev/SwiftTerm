@@ -433,6 +433,9 @@ open class Terminal {
     private var charToIndexMap: [Character:Int32] = [:]
     private var indexToCharMap: [Int32: Character] = [:]
     private var lastCharIndex: Int32 = Int32(CharData.maxRune + 1)
+    private var renderStringToIndexMap: [String: Int32] = [:]
+    private var indexToRenderStringMap: [Int32: String] = [:]
+    private var pendingRenderPrefix = ""
     var gLevel: UInt8 = 0
     var cursorBlink: Bool = false
     
@@ -1319,6 +1322,29 @@ open class Terminal {
             }
 
             if let firstScalar = ch.unicodeScalars.first {
+                if firstScalar.value == 0x2066 {
+                    pendingRenderPrefix.append(ch)
+                    continue
+                }
+                if firstScalar.value == 0x2069 {
+                    let last = buffer.lastBufferStorage
+                    if last.cols == cols && last.rows == rows {
+                        let existingLine = buffer.lines[last.y]
+                        let lastx = last.x >= cols ? cols - 1 : last.x
+                        var cd = existingLine[lastx]
+                        let renderString = getRenderString(for: cd) + String(ch)
+                        updateCharData(
+                            &cd,
+                            char: getCharacter(for: cd),
+                            renderString: renderString,
+                            size: Int32(cd.width)
+                        )
+                        existingLine[lastx] = cd
+                        updateRange(borrowing: buffer, last.y)
+                    }
+                    continue
+                }
+
                 // Check if we should try to combine this character with the previous one.
                 // This applies to:
                 // 1. Unicode combining characters (diacritics, etc.)
@@ -1445,7 +1471,14 @@ open class Terminal {
             //if screenReaderMode {
             //    emitChar (ch)
             //}
-            let charData = makeCharData (attribute: curAttr, char: ch, size: Int8 (chWidth))
+            let renderString = pendingRenderPrefix + String(ch)
+            pendingRenderPrefix = ""
+            let charData = makeCharData(
+                attribute: curAttr,
+                char: ch,
+                renderString: renderString,
+                size: Int8(chWidth)
+            )
             buffer.insertCharacter(charData)
         }
         updateRange(borrowing: buffer, buffer.y)
@@ -1470,6 +1503,21 @@ open class Terminal {
         return newIndex
     }
 
+    private func code(for char: Character, renderString: String) -> Int32 {
+        guard renderString != String(char) else {
+            return code(for: char)
+        }
+        if let existingIndex = renderStringToIndexMap[renderString] {
+            return existingIndex
+        }
+        let newIndex = lastCharIndex
+        renderStringToIndexMap[renderString] = newIndex
+        indexToRenderStringMap[newIndex] = renderString
+        indexToCharMap[newIndex] = char
+        lastCharIndex += 1
+        return newIndex
+    }
+
     private func character (for code: Int32) -> Character
     {
         if code > Int32(CharData.maxRune) {
@@ -1486,6 +1534,10 @@ open class Terminal {
         return character (for: charData.code)
     }
 
+    public func getRenderString(for charData: CharData) -> String {
+        indexToRenderStringMap[charData.code] ?? String(getCharacter(for: charData))
+    }
+
     public func makeCharData (attribute: Attribute, code: Int32, size: Int8 = 1) -> CharData
     {
         return CharData (attribute: attribute, code: code, size: size)
@@ -1496,6 +1548,19 @@ open class Terminal {
         return makeCharData (attribute: attribute, code: code (for: char), size: size)
     }
 
+    public func makeCharData(
+        attribute: Attribute,
+        char: Character,
+        renderString: String,
+        size: Int8 = 1
+    ) -> CharData {
+        makeCharData(
+            attribute: attribute,
+            code: code(for: char, renderString: renderString),
+            size: size
+        )
+    }
+
     public func makeCharData (attribute: Attribute, scalar: UnicodeScalar, size: Int8 = 1) -> CharData
     {
         return makeCharData (attribute: attribute, code: Int32 (scalar.value), size: size)
@@ -1504,6 +1569,18 @@ open class Terminal {
     public func updateCharData (_ charData: inout CharData, char: Character, size: Int32)
     {
         charData.setValue (code: code (for: char), size: size)
+    }
+
+    public func updateCharData(
+        _ charData: inout CharData,
+        char: Character,
+        renderString: String,
+        size: Int32
+    ) {
+        charData.setValue(
+            code: code(for: char, renderString: renderString),
+            size: size
+        )
     }
 
     public func updateCharData (_ charData: inout CharData, code: Int32, size: Int32)

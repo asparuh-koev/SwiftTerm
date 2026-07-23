@@ -26,7 +26,7 @@ struct OffscreenFramePixels: Equatable {
         }
 
         let originX = column * cellWidth
-        let originY = (frame.rows - row - 1) * cellHeight
+        let originY = row * cellHeight
         guard originX + cellWidth <= width, originY + cellHeight <= height else {
             return nil
         }
