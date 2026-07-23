@@ -1,0 +1,80 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+contract="$repo_root/toolchain/render-capture-v1.json"
+
+/usr/bin/python3 - "$contract" <<'PY'
+import json
+import pathlib
+import platform
+import plistlib
+import subprocess
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected_keys = {
+    "schema",
+    "architecture",
+    "compiler_version",
+    "swiftlang_build",
+    "sdk_path",
+    "sdk_version",
+    "deployment_target",
+    "swift_language_version",
+    "command_line_tools_receipt_version",
+    "upstream_base",
+}
+contract = json.loads(path.read_text(encoding="utf-8"))
+if set(contract) != expected_keys:
+    missing = sorted(expected_keys - set(contract))
+    unknown = sorted(set(contract) - expected_keys)
+    raise SystemExit(f"toolchain contract keys differ: missing={missing} unknown={unknown}")
+
+def run(*args):
+    return subprocess.check_output(args, text=True).strip()
+
+failures = []
+swift_version = run("/usr/bin/xcrun", "--find", "swiftc")
+swift_output = run(swift_version, "--version").splitlines()[0]
+if contract["compiler_version"] not in swift_output:
+    failures.append(f"compiler: expected {contract['compiler_version']!r}, got {swift_output!r}")
+if contract["swiftlang_build"] not in swift_output:
+    failures.append(f"swiftlang: expected {contract['swiftlang_build']!r}, got {swift_output!r}")
+
+architecture = platform.machine()
+if architecture != contract["architecture"]:
+    failures.append(f"architecture: expected {contract['architecture']!r}, got {architecture!r}")
+
+sdk_path = pathlib.Path(contract["sdk_path"])
+if not sdk_path.is_dir():
+    failures.append(f"SDK path is absent: {sdk_path}")
+else:
+    settings = sdk_path / "SDKSettings.plist"
+    with settings.open("rb") as stream:
+        sdk = plistlib.load(stream)
+    version = str(sdk.get("Version", ""))
+    if version != contract["sdk_version"]:
+        failures.append(f"SDK version: expected {contract['sdk_version']!r}, got {version!r}")
+
+pkg_info = run("/usr/sbin/pkgutil", "--pkg-info", "com.apple.pkg.CLTools_Executables")
+receipt = next(
+    (line.split(":", 1)[1].strip() for line in pkg_info.splitlines() if line.startswith("version:")),
+    "",
+)
+if receipt != contract["command_line_tools_receipt_version"]:
+    failures.append(
+        "Command Line Tools receipt: expected "
+        f"{contract['command_line_tools_receipt_version']!r}, got {receipt!r}"
+    )
+
+if failures:
+    raise SystemExit(
+        "unsupported terminal-render-capture toolchain:\n- "
+        + "\n- ".join(failures)
+        + "\nInstall the exact Command Line Tools and macOS 15.4 SDK named in "
+        "toolchain/render-capture-v1.json."
+    )
+
+print("toolchain contract satisfied")
+PY

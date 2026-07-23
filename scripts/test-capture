@@ -1,0 +1,16 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+cd "$repo_root"
+scripts/build-capture
+.build/bin/terminal-render-capture self-test
+
+for expected in .build/bin/terminal-render-capture .build/bin/terminal-render-fixture; do
+  if [[ ! -x "$expected" ]]; then
+    echo "missing executable: $expected" >&2
+    exit 1
+  fi
+done
+
+echo "capture tests passed"

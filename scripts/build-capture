@@ -1,0 +1,52 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+cd "$repo_root"
+scripts/check-toolchain
+
+build_root="$repo_root/.build"
+bin_root="$build_root/bin"
+module_cache="$build_root/module-cache"
+/bin/mkdir -p "$bin_root" "$module_cache"
+
+typeset -a swiftterm_sources
+while IFS= read -r source; do
+  swiftterm_sources+=("$source")
+done < <(/usr/bin/find Sources/SwiftTerm -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
+
+typeset -a capture_sources
+while IFS= read -r source; do
+  capture_sources+=("$source")
+done < <(/usr/bin/find Sources/TerminalRenderCapture -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
+
+fork_commit=$(/usr/bin/git rev-parse HEAD)
+generated="$build_root/TerminalRenderCaptureBuildInfo.swift"
+/usr/bin/printf 'enum TerminalRenderCaptureBuildInfo { static let forkCommit = "%s" }\n' "$fork_commit" > "$generated"
+
+/usr/bin/xcrun swiftc \
+  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -target arm64-apple-macosx13.0 \
+  -swift-version 5 \
+  -parse-as-library \
+  -warnings-as-errors \
+  -module-name TerminalRenderCapture \
+  -module-cache-path "$module_cache" \
+  -o "$bin_root/terminal-render-capture" \
+  "${swiftterm_sources[@]}" \
+  "${capture_sources[@]}" \
+  "$generated"
+
+/usr/bin/xcrun swiftc \
+  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -target arm64-apple-macosx13.0 \
+  -swift-version 5 \
+  -parse-as-library \
+  -warnings-as-errors \
+  -module-name TerminalRenderFixture \
+  -module-cache-path "$module_cache" \
+  -o "$bin_root/terminal-render-fixture" \
+  Sources/TerminalRenderFixture/Main.swift
+
+echo "built $bin_root/terminal-render-capture"
+echo "built $bin_root/terminal-render-fixture"

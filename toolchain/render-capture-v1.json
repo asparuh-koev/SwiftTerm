@@ -1,0 +1,12 @@
+{
+  "schema": "swiftterm.render-capture-toolchain/v1",
+  "architecture": "arm64",
+  "compiler_version": "Apple Swift version 6.3.2",
+  "swiftlang_build": "swiftlang-6.3.2.1.108",
+  "sdk_path": "/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk",
+  "sdk_version": "15.4",
+  "deployment_target": "arm64-apple-macosx13.0",
+  "swift_language_version": "5",
+  "command_line_tools_receipt_version": "26.5.0.0.1777544298",
+  "upstream_base": "58915b1010d7dbc86d0e79dc2c40f0c183ccaf5b"
+}
