@@ -1,0 +1,17 @@
+ListenAddress 127.0.0.1
+Port @PORT@
+HostKey @HOST_KEY@
+PidFile @PID_FILE@
+AuthorizedKeysFile @AUTHORIZED_KEYS@
+StrictModes no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+UsePAM no
+PermitRootLogin no
+AllowUsers @USER@
+PermitUserEnvironment no
+PrintMotd no
+LogLevel ERROR
+ForceCommand @FIXTURE@

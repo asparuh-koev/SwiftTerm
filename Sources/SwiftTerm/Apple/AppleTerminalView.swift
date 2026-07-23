@@ -434,6 +434,23 @@ extension TerminalView {
         }
     }
 
+    public func synchronizedOutputEnded(
+        source: Terminal,
+        reason: SynchronizedOutputEndReason
+    ) {
+        guard let observer = renderObserver else {
+            return
+        }
+        let notify = {
+            observer.terminalView(self, synchronizedOutputEnded: reason)
+        }
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.sync(execute: notify)
+        }
+    }
+
     public func setBackgroundColor(source: Terminal, color: Color) {
         // Can not implement this until I change the color to not be this struct
         nativeBackgroundColor = TTColor.make (color: color)
@@ -1174,7 +1191,12 @@ extension TerminalView {
                       height: max(0, maxY - minY))
     }
 
-    private func drawBlockElements(_ elements: [BlockElementRenderItem], lineOrigin: CGPoint, in context: CGContext) {
+    private func drawBlockElements(
+        _ elements: [BlockElementRenderItem],
+        row: Int,
+        lineOrigin: CGPoint,
+        in context: CGContext
+    ) {
         guard !elements.isEmpty else {
             return
         }
@@ -1206,12 +1228,43 @@ extension TerminalView {
                 let fillColor = element.foregroundColor.withAlphaComponent(resolvedAlpha)
                 context.setFillColor(fillColor.cgColor)
                 context.fill(drawRect)
+                if let observer = renderObserver, let rgba = renderRGBA(fillColor) {
+                    observer.terminalView(
+                        self,
+                        drewPrimitive: .block(
+                            RenderedBlock(
+                                codePoint: element.codePoint,
+                                row: row,
+                                column: element.column,
+                                columnWidth: element.columnWidth,
+                                rgba: rgba,
+                                rectsPoints: [
+                                    RenderRect(
+                                        origin: RenderPoint(
+                                            x: Double(drawRect.origin.x),
+                                            y: Double(drawRect.origin.y)
+                                        ),
+                                        size: RenderSize(
+                                            width: Double(drawRect.size.width),
+                                            height: Double(drawRect.size.height)
+                                        )
+                                    ),
+                                ]
+                            )
+                        )
+                    )
+                }
             }
         }
         context.restoreGState()
     }
 
-    private func drawBoxDrawings(_ items: [BoxDrawingRenderItem], lineOrigin: CGPoint, in context: CGContext) {
+    private func drawBoxDrawings(
+        _ items: [BoxDrawingRenderItem],
+        row: Int,
+        lineOrigin: CGPoint,
+        in context: CGContext
+    ) {
         guard !items.isEmpty else {
             return
         }
@@ -1245,6 +1298,30 @@ extension TerminalView {
                                     scale: scale,
                                     color: color,
                                     baseThicknessPx: baseThicknessPx)
+            if let observer = renderObserver, let rgba = renderRGBA(color) {
+                observer.terminalView(
+                    self,
+                    drewPrimitive: .boxDrawing(
+                        RenderedBox(
+                            codePoint: item.codePoint,
+                            row: row,
+                            column: item.column,
+                            columnWidth: item.columnWidth,
+                            rgba: rgba,
+                            cellOriginPoints: RenderPoint(
+                                x: Double(cellOrigin.x),
+                                y: Double(cellOrigin.y)
+                            ),
+                            cellSizePoints: RenderSize(
+                                width: Double(cellWidth),
+                                height: Double(cellHeight)
+                            ),
+                            scale: Double(scale),
+                            baseThicknessPixels: baseThicknessPx
+                        )
+                    )
+                )
+            }
         }
 
         context.restoreGState()
@@ -1492,11 +1569,21 @@ extension TerminalView {
             }
 
             if !lineInfo.boxDrawings.isEmpty {
-                drawBoxDrawings(lineInfo.boxDrawings, lineOrigin: lineOrigin, in: context)
+                drawBoxDrawings(
+                    lineInfo.boxDrawings,
+                    row: row - displayBuffer.yDisp,
+                    lineOrigin: lineOrigin,
+                    in: context
+                )
             }
 
             if !lineInfo.blockElements.isEmpty {
-                drawBlockElements(lineInfo.blockElements, lineOrigin: lineOrigin, in: context)
+                drawBlockElements(
+                    lineInfo.blockElements,
+                    row: row - displayBuffer.yDisp,
+                    lineOrigin: lineOrigin,
+                    in: context
+                )
             }
 
             context.setShouldAntialias(true)
@@ -1507,6 +1594,7 @@ extension TerminalView {
             #endif
 
             // Glyph drawing loop — reuses cached CTLines
+            let glyphObserver = renderObserver
             for prepared in preparedSegments {
                 var processedGlyphs = 0
                 for run in prepared.runs {
@@ -1525,6 +1613,8 @@ extension TerminalView {
 
                     var coreTextPositions = [CGPoint](repeating: .zero, count: runGlyphsCount)
                     CTRunGetPositions(run, CFRange(), &coreTextPositions)
+                    var coreTextAdvances = [CGSize](repeating: .zero, count: runGlyphsCount)
+                    CTRunGetAdvances(run, CFRange(), &coreTextAdvances)
 
                     var positions = [CGPoint](repeating: .zero, count: runGlyphsCount)
                     for i in 0..<runGlyphsCount {
@@ -1535,10 +1625,12 @@ extension TerminalView {
                             y: lineOrigin.y + yOffset + ctPosition.y)
                     }
 
-                    nativeForegroundColor.setFill()
+                    var drawColor = nativeForegroundColor
+                    drawColor.setFill()
 
                     if runAttributes.keys.contains(.foregroundColor) {
                         let color = runAttributes[.foregroundColor] as! TTColor
+                        drawColor = color
                         color.setFill()
                     }
 
@@ -1573,9 +1665,49 @@ extension TerminalView {
                             var g = runGlyphs[i]
                             var p = glyphPositions[i]
                             CTFontDrawGlyphs(drawFont, &g, &p, 1, context)
+                            if
+                                let glyphObserver,
+                                let observed = observedGlyph(
+                                    row: row - displayBuffer.yDisp,
+                                    segment: prepared.segment,
+                                    slotColumn: startColumn + (i * prepared.segment.columnWidth),
+                                    slotWidth: prepared.segment.columnWidth,
+                                    run: run,
+                                    glyphIndex: i,
+                                    glyph: g,
+                                    font: drawFont,
+                                    position: p,
+                                    advance: CGSize(
+                                        width: coreTextAdvances[i].width * s,
+                                        height: coreTextAdvances[i].height * s
+                                    ),
+                                    foregroundColor: drawColor
+                                )
+                            {
+                                glyphObserver.terminalView(self, drewGlyph: observed)
+                            }
                         }
                     } else {
                         CTFontDrawGlyphs(runFont, runGlyphs, &glyphPositions, glyphPositions.count, context)
+                        if let glyphObserver {
+                            for i in 0..<runGlyphsCount {
+                                if let observed = observedGlyph(
+                                    row: row - displayBuffer.yDisp,
+                                    segment: prepared.segment,
+                                    slotColumn: startColumn + (i * prepared.segment.columnWidth),
+                                    slotWidth: prepared.segment.columnWidth,
+                                    run: run,
+                                    glyphIndex: i,
+                                    glyph: runGlyphs[i],
+                                    font: ctRunFont,
+                                    position: glyphPositions[i],
+                                    advance: coreTextAdvances[i],
+                                    foregroundColor: drawColor
+                                ) {
+                                    glyphObserver.terminalView(self, drewGlyph: observed)
+                                }
+                            }
+                        }
                     }
 
                     // Draw other attributes (decorations stay grid-aligned)

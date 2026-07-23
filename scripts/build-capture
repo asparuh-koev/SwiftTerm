@@ -17,7 +17,13 @@ done < <(/usr/bin/find Sources/SwiftTerm -type f -name '*.swift' -print | LC_ALL
 
 typeset -a capture_sources
 while IFS= read -r source; do
-  capture_sources+=("$source")
+  if [[ "$source" == "Sources/TerminalRenderCapture/GlyphAtlas.swift" ]]; then
+    staged="$build_root/TerminalRenderCaptureGlyphAtlas.swift"
+    /bin/cp "$source" "$staged"
+    capture_sources+=("$staged")
+  else
+    capture_sources+=("$source")
+  fi
 done < <(/usr/bin/find Sources/TerminalRenderCapture -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
 
 fork_commit=$(/usr/bin/git rev-parse HEAD)

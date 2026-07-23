@@ -10,6 +10,13 @@
 
 import Foundation
 
+/// Why DEC synchronized output stopped.
+public enum SynchronizedOutputEndReason: String, Codable {
+    case explicitReset
+    case timeout
+    case terminalReset
+}
+
 /**
  * The terminal delegate is a protocol that must be implemented by a class
  * that would provide a user interface for the terminal, and it is used by the
@@ -91,6 +98,10 @@ public protocol TerminalDelegate: AnyObject {
     /// Invoked when synchronized output mode is toggled on or off.
     /// The default implementation does nothing.
     func synchronizedOutputChanged (source: Terminal, active: Bool)
+
+    /// Invoked after synchronized output stops, with the exact close path.
+    /// The default implementation does nothing.
+    func synchronizedOutputEnded (source: Terminal, reason: SynchronizedOutputEndReason)
     
     /// Should raise the bell
     /// The default implementation does nothing.
@@ -4218,7 +4229,7 @@ open class Terminal {
                 bracketedPasteMode = false
                 break
             case 2026: // synchronized output (https://github.com/contour-terminal/vt-extensions)
-                endSynchronizedOutput ()
+                endSynchronizedOutput (reason: .explicitReset)
             default:
                 log ("Unhandled DEC Private Mode Reset (DECRST) with \(par)")
                 break
@@ -5203,7 +5214,7 @@ open class Terminal {
     /// for a soft reset see `softReset`
     public func resetToInitialState ()
     {
-        endSynchronizedOutput ()
+        endSynchronizedOutput (reason: .terminalReset)
         options.rows = rows
         options.cols = cols
         let savedCursorHidden = cursorHidden
@@ -5529,7 +5540,7 @@ open class Terminal {
         if newCols == self.cols && newRows == self.rows {
             return
         }
-        endSynchronizedOutput ()
+        endSynchronizedOutput (reason: .terminalReset)
         let oldCols = self.cols
         resizeBuffers(newColumns: newCols, newRows: newRows)
         self.cols = newCols
@@ -5588,7 +5599,7 @@ open class Terminal {
         }
     }
 
-    private func endSynchronizedOutput ()
+    private func endSynchronizedOutput (reason: SynchronizedOutputEndReason)
     {
         guard synchronizedOutputActive else {
             return
@@ -5598,6 +5609,7 @@ open class Terminal {
         synchronizedOutputTimeoutItem = nil
         refresh (startRow: 0, endRow: rows - 1)
         tdel?.synchronizedOutputChanged(source: self, active: false)
+        tdel?.synchronizedOutputEnded(source: self, reason: reason)
     }
 
     private func scheduleSynchronizedOutputTimeout ()
@@ -5607,7 +5619,7 @@ open class Terminal {
             guard let self, self.synchronizedOutputActive else {
                 return
             }
-            self.endSynchronizedOutput()
+            self.endSynchronizedOutput(reason: .timeout)
         }
         synchronizedOutputTimeoutItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + synchronizedOutputTimeoutSeconds, execute: workItem)
@@ -6756,6 +6768,10 @@ public extension TerminalDelegate {
     }
 
     func synchronizedOutputChanged(source: Terminal, active: Bool) {
+        // nothing
+    }
+
+    func synchronizedOutputEnded(source: Terminal, reason: SynchronizedOutputEndReason) {
         // nothing
     }
     

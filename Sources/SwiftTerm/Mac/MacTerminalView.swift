@@ -42,6 +42,15 @@ import os.log
  * defaults, otherwise, this uses its own set of defaults colors.
  */
 open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, TerminalDelegate {
+    /// Development-only observer for exact CPU draw-boundary capture.
+    public weak var renderObserver: TerminalRenderObserver?
+
+    /// Development-only deterministic scale. It is ignored without an observer.
+    public var renderObservationScaleOverride: CGFloat?
+
+    /// Keeps the deterministic scale active during the unobserved AppKit display pass.
+    var renderObservationScaleForced = false
+
 #if canImport(MetalKit)
     // Default to throttling Metal redraws during live-resize; set SWIFTTERM_METAL_LIVE_RESIZE_THROTTLE=0 to disable.
     private static let metalLiveResizeThrottleEnabled: Bool = {
@@ -755,7 +764,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     func backingScaleFactor () -> CGFloat
     {
-        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        if (renderObserver != nil || renderObservationScaleForced),
+           let override = renderObservationScaleOverride {
+            return override
+        }
+        return window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
     }
     
     @objc
@@ -949,6 +962,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 #endif
         guard let currentContext = getCurrentGraphicsContext() else {
             return
+        }
+        let observation = renderObserver.map { observer in
+            let frame = renderFrameInfo()
+            observer.terminalView(self, beginFrame: frame)
+            return (observer, frame)
+        }
+        defer {
+            if let (observer, frame) = observation {
+                observer.terminalView(self, endFrame: frame)
+            }
         }
         drawTerminalContents (dirtyRect: dirtyRect, context: currentContext, bufferOffset: terminal.displayBuffer.yDisp)
     }

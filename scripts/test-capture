@@ -6,11 +6,161 @@ cd "$repo_root"
 scripts/build-capture
 .build/bin/terminal-render-capture self-test
 
+typeset -a swiftterm_sources
+while IFS= read -r source; do
+  swiftterm_sources+=("$source")
+done < <(/usr/bin/find Sources/SwiftTerm -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
+
+typeset -a capture_sources
+while IFS= read -r source; do
+  if [[ "$source" != "Sources/TerminalRenderCapture/Main.swift" ]]; then
+    if [[ "$source" == "Sources/TerminalRenderCapture/GlyphAtlas.swift" ]]; then
+      capture_sources+=(".build/TerminalRenderCaptureGlyphAtlas.swift")
+    else
+      capture_sources+=("$source")
+    fi
+  fi
+done < <(/usr/bin/find Sources/TerminalRenderCapture -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
+
+typeset -a test_sources
+while IFS= read -r source; do
+  test_sources+=("$source")
+done < <(/usr/bin/find Tests/TerminalRenderCaptureTests -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
+
+/usr/bin/xcrun swiftc \
+  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -target arm64-apple-macosx13.0 \
+  -swift-version 5 \
+  -parse-as-library \
+  -warnings-as-errors \
+  -module-name TerminalRenderCaptureTests \
+  -module-cache-path .build/module-cache \
+  -o .build/bin/terminal-render-capture-tests \
+  "${swiftterm_sources[@]}" \
+  "${capture_sources[@]}" \
+  .build/TerminalRenderCaptureBuildInfo.swift \
+  "${test_sources[@]}"
+
+.build/bin/terminal-render-capture-tests
+
 for expected in .build/bin/terminal-render-capture .build/bin/terminal-render-fixture; do
   if [[ ! -x "$expected" ]]; then
     echo "missing executable: $expected" >&2
     exit 1
   fi
 done
+
+sshd_root="$repo_root/.build/test-sshd"
+/bin/rm -rf "$sshd_root"
+/bin/mkdir -p "$sshd_root"
+/usr/bin/ssh-keygen -q -t ed25519 -N "" -f "$sshd_root/host-key"
+/usr/bin/ssh-keygen -q -t ed25519 -N "" -f "$sshd_root/client-key"
+/bin/cp "$sshd_root/client-key.pub" "$sshd_root/authorized_keys"
+port=$(/usr/bin/python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+user=$(/usr/bin/id -un)
+config="$sshd_root/sshd_config"
+/usr/bin/sed \
+  -e "s|@PORT@|$port|g" \
+  -e "s|@HOST_KEY@|$sshd_root/host-key|g" \
+  -e "s|@PID_FILE@|$sshd_root/sshd.pid|g" \
+  -e "s|@AUTHORIZED_KEYS@|$sshd_root/authorized_keys|g" \
+  -e "s|@USER@|$user|g" \
+  -e "s|@FIXTURE@|$repo_root/.build/bin/terminal-render-fixture|g" \
+  Tests/Fixtures/sshd_config.template > "$config"
+
+/usr/sbin/sshd -t -f "$config"
+/usr/sbin/sshd -D -e -f "$config" > "$sshd_root/sshd.log" 2>&1 &
+sshd_pid=$!
+trap '/bin/kill "$sshd_pid" 2>/dev/null || true' EXIT
+ready=false
+for _ in {1..50}; do
+  if /usr/bin/nc -z 127.0.0.1 "$port"; then
+    ready=true
+    break
+  fi
+  /bin/sleep 0.02
+done
+if [[ "$ready" != true ]]; then
+  /bin/cat "$sshd_root/sshd.log" >&2
+  exit 1
+fi
+
+typeset -a ssh_args
+ssh_args=(
+  -T
+  -o BatchMode=yes
+  -o LogLevel=ERROR
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+  -o IdentitiesOnly=yes
+  -i "$sshd_root/client-key"
+  -p "$port"
+  "$user@127.0.0.1"
+)
+for name in first second; do
+  .build/bin/terminal-render-capture capture \
+    --artifact "$sshd_root/$name.json" \
+    --direct \
+    --cols 100 \
+    --rows 20 \
+    --timeout-seconds 10 \
+    --raw-wire "$sshd_root/$name-wire.bin" \
+    -- /usr/bin/ssh "${ssh_args[@]}"
+done
+/usr/bin/cmp "$sshd_root/first.json" "$sshd_root/second.json"
+
+/bin/kill "$sshd_pid"
+wait "$sshd_pid" 2>/dev/null || true
+trap - EXIT
+
+throughput_port=$(/usr/bin/python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+throughput_config="$sshd_root/sshd-throughput_config"
+/usr/bin/sed \
+  -e "s|@PORT@|$throughput_port|g" \
+  -e "s|@HOST_KEY@|$sshd_root/host-key|g" \
+  -e "s|@PID_FILE@|$sshd_root/sshd-throughput.pid|g" \
+  -e "s|@AUTHORIZED_KEYS@|$sshd_root/authorized_keys|g" \
+  -e "s|@USER@|$user|g" \
+  -e "s|@FIXTURE@|$repo_root/.build/bin/terminal-render-fixture --throughput|g" \
+  Tests/Fixtures/sshd_config.template > "$throughput_config"
+/usr/sbin/sshd -t -f "$throughput_config"
+/usr/sbin/sshd -D -e -f "$throughput_config" > "$sshd_root/sshd-throughput.log" 2>&1 &
+throughput_pid=$!
+trap '/bin/kill "$throughput_pid" 2>/dev/null || true' EXIT
+for _ in {1..50}; do
+  if /usr/bin/nc -z 127.0.0.1 "$throughput_port"; then
+    break
+  fi
+  /bin/sleep 0.02
+done
+.build/bin/terminal-render-capture capture \
+  --artifact "$sshd_root/throughput.json" \
+  --direct \
+  --cols 200 \
+  --rows 50 \
+  --timeout-seconds 120 \
+  -- /usr/bin/ssh \
+  -T \
+  -o BatchMode=yes \
+  -o LogLevel=ERROR \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o IdentitiesOnly=yes \
+  -i "$sshd_root/client-key" \
+  -p "$throughput_port" \
+  "$user@127.0.0.1"
+/usr/bin/python3 - "$sshd_root/throughput.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    artifact = json.load(stream)
+assert artifact["transport"]["observed_frame_count"] == 30
+assert artifact["status"]["last_authoritative_ordinal"] == 29
+assert [frame["stream_ordinal"] for frame in artifact["frames"]] == [29]
+PY
+/bin/kill "$throughput_pid"
+wait "$throughput_pid" 2>/dev/null || true
+trap - EXIT
 
 echo "capture tests passed"
