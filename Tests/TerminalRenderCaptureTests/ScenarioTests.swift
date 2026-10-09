@@ -73,11 +73,11 @@ private func scenarioDocument() -> [String: Any] {
         ],
     ]
     return [
-        "schema": "ai-survivors.terminal-render-scenario/v1",
+        "schema": "ai-survivors.terminal-render-scenario/v2",
         "id": "validator-fixture",
         "fixture": [
             "kind": "ai-survivors-special-characters",
-            "version": 1,
+            "version": 2,
             "stages": [[
                 "name": "only",
                 "cells": [[
@@ -112,6 +112,17 @@ private func scenarioDocument() -> [String: Any] {
     ]
 }
 
+private func withFixture(
+    _ document: [String: Any],
+    _ mutate: (inout [String: Any]) -> Void
+) -> [String: Any] {
+    var document = document
+    var fixture = document["fixture"] as! [String: Any]
+    mutate(&fixture)
+    document["fixture"] = fixture
+    return document
+}
+
 private func writeScenario(_ value: [String: Any], _ url: URL) throws {
     let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     try data.write(to: url, options: .atomic)
@@ -128,6 +139,41 @@ func runScenarioTests() throws {
         loaded.document.fixture.stages.count == 1,
         "fixture-owned stage nesting was not accepted"
     )
+    try captureRequire(
+        !loaded.document.fixture.stages[0].cells[0].bold,
+        "a cell without a bold key was not regular"
+    )
+
+    let bold = withFixture(scenarioDocument()) { fixture in
+        var stages = fixture["stages"] as! [[String: Any]]
+        var cells = stages[0]["cells"] as! [[String: Any]]
+        cells[0]["bold"] = true
+        stages[0]["cells"] = cells
+        fixture["stages"] = stages
+    }
+    try writeScenario(bold, url)
+    let loadedBold = try ScenarioLoader.load(url)
+    try captureRequire(
+        loadedBold.document.fixture.stages[0].cells[0].bold,
+        "a bold fixture cell was not accepted as bold"
+    )
+
+    let refusedV1: [(schema: String, version: Int, field: String)] = [
+        ("ai-survivors.terminal-render-scenario/v1", 2, "schema"),
+        ("ai-survivors.terminal-render-scenario/v2", 1, "fixture"),
+    ]
+    for refused in refusedV1 {
+        var old = withFixture(scenarioDocument()) { $0["version"] = refused.version }
+        old["schema"] = refused.schema
+        try writeScenario(old, url)
+        do {
+            _ = try ScenarioLoader.load(url)
+            throw CaptureTestFailure.assertion(
+                "a v1 scenario was accepted: \(refused.schema), fixture \(refused.version)"
+            )
+        } catch let ScenarioError.invalid(field) where field == refused.field {
+        }
+    }
 
     var unknown = scenarioDocument()
     var fixture = unknown["fixture"] as! [String: Any]

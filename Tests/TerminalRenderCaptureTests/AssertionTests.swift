@@ -50,11 +50,11 @@ func runAssertionTests() throws {
         ),
     ]
     let document = ScenarioV1(
-        schema: "ai-survivors.terminal-render-scenario/v1",
+        schema: "ai-survivors.terminal-render-scenario/v2",
         id: "test-scenario",
         fixture: FixtureV1(
             kind: "ai-survivors-special-characters",
-            version: 1,
+            version: 2,
             stages: []
         ),
         seed: 1,

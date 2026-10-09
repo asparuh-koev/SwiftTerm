@@ -12,6 +12,20 @@ struct FixtureCellV1: Codable, Equatable {
     let symbol: String
     let fg: [UInt8]
     let bg: [UInt8]
+    let bold: Bool
+}
+
+extension FixtureCellV1 {
+    // `bold` is optional in the scenario: an absent key is a regular cell.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        col = try container.decode(UInt16.self, forKey: .col)
+        row = try container.decode(UInt16.self, forKey: .row)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        fg = try container.decode([UInt8].self, forKey: .fg)
+        bg = try container.decode([UInt8].self, forKey: .bg)
+        bold = try container.decodeIfPresent(Bool.self, forKey: .bold) ?? false
+    }
 }
 
 struct FixtureStageV1: Codable, Equatable {
@@ -222,7 +236,7 @@ enum ScenarioLoader {
     }
 
     private static func validate(_ value: ScenarioV1) throws {
-        guard value.schema == "ai-survivors.terminal-render-scenario/v1" else {
+        guard value.schema == "ai-survivors.terminal-render-scenario/v2" else {
             throw ScenarioError.invalid("schema")
         }
         guard isAsciiId(value.id) else {
@@ -230,7 +244,7 @@ enum ScenarioLoader {
         }
         guard
             value.fixture.kind == "ai-survivors-special-characters",
-            value.fixture.version == 1,
+            value.fixture.version == 2,
             (1...32).contains(value.fixture.stages.count)
         else {
             throw ScenarioError.invalid("fixture")
@@ -472,6 +486,7 @@ enum ScenarioLoader {
         }
         try exactKeys(fixture, ["kind", "version", "stages"], "fixture")
         try exactKeys(viewport, ["cols", "rows"], "viewport")
+        let cellKeys: Set<String> = ["col", "row", "symbol", "fg", "bg"]
         try exactKeys(
             limits,
             [
@@ -488,7 +503,11 @@ enum ScenarioLoader {
                 throw ScenarioError.decode
             }
             for cell in cells {
-                try exactKeys(cell, ["col", "row", "symbol", "fg", "bg"], "cell")
+                try exactKeys(
+                    cell,
+                    cell.keys.contains("bold") ? cellKeys.union(["bold"]) : cellKeys,
+                    "cell"
+                )
             }
         }
         for input in inputs {
