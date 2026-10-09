@@ -27,11 +27,21 @@ while IFS= read -r source; do
 done < <(/usr/bin/find Sources/TerminalRenderCapture -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
 
 fork_commit=$(/usr/bin/git rev-parse HEAD)
+sdk_path=$(/usr/bin/xcrun --show-sdk-path)
+sdk_version=$(/usr/bin/plutil -extract Version raw -o - "$sdk_path/SDKSettings.plist")
+swift_version=${${(f)"$(/usr/bin/xcrun swiftc --version 2>/dev/null)"}[1]}
 generated="$build_root/TerminalRenderCaptureBuildInfo.swift"
-/usr/bin/printf 'enum TerminalRenderCaptureBuildInfo { static let forkCommit = "%s" }\n' "$fork_commit" > "$generated"
+{
+  /usr/bin/printf 'enum TerminalRenderCaptureBuildInfo {\n'
+  /usr/bin/printf '    static let forkCommit = "%s"\n' "$fork_commit"
+  /usr/bin/printf '    static let swiftVersion = "%s"\n' "$swift_version"
+  /usr/bin/printf '    static let sdkVersion = "%s"\n' "$sdk_version"
+  /usr/bin/printf '    static let sdkPath = "%s"\n' "$sdk_path"
+  /usr/bin/printf '}\n'
+} > "$generated"
 
 /usr/bin/xcrun swiftc \
-  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -sdk "$sdk_path" \
   -target arm64-apple-macosx13.0 \
   -swift-version 5 \
   -parse-as-library \
@@ -44,7 +54,7 @@ generated="$build_root/TerminalRenderCaptureBuildInfo.swift"
   "$generated"
 
 /usr/bin/xcrun swiftc \
-  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -sdk "$sdk_path" \
   -target arm64-apple-macosx13.0 \
   -swift-version 5 \
   -parse-as-library \

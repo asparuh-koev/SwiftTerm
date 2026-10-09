@@ -57,8 +57,8 @@ enum CaptureEnvironment {
             "macos": "\(operating.majorVersion).\(operating.minorVersion).\(operating.patchVersion)|\(build)",
             "renderer_backend": "swiftterm-appkit-cpu",
             "scenario_sha256": scenario?.sha256 ?? "observational",
-            "sdk": "15.4|/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk",
-            "swift": "Apple Swift version 6.3.2|swiftlang-6.3.2.1.108",
+            "sdk": "\(TerminalRenderCaptureBuildInfo.sdkVersion)|\(TerminalRenderCaptureBuildInfo.sdkPath)",
+            "swift": TerminalRenderCaptureBuildInfo.swiftVersion,
             "upstream_base": "58915b1010d7dbc86d0e79dc2c40f0c183ccaf5b",
             "viewport": "\(frame.columns)x\(frame.rows)",
         ]

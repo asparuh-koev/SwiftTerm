@@ -28,7 +28,7 @@ while IFS= read -r source; do
 done < <(/usr/bin/find Tests/TerminalRenderCaptureTests -type f -name '*.swift' -print | LC_ALL=C /usr/bin/sort)
 
 /usr/bin/xcrun swiftc \
-  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  -sdk "$(/usr/bin/xcrun --show-sdk-path)" \
   -target arm64-apple-macosx13.0 \
   -swift-version 5 \
   -parse-as-library \

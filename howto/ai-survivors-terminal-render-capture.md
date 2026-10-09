@@ -7,9 +7,16 @@ artifact as an external rendering oracle for a small Hebrew, Arabic, fallback,
 and terminal-primitive corpus.
 
 The supported build is Apple silicon, macOS 13 or newer, Xcode Command Line
-Tools with the macOS 15.4 SDK, `arm64-apple-macosx13.0`, and Swift 5 language
-mode. The checked build intentionally uses direct `swiftc`; it does not depend
-on SwiftPM.
+Tools providing Swift 6.3.2 or newer and a macOS 15.4 or newer SDK,
+`arm64-apple-macosx13.0`, and Swift 5 language mode. The checked build
+intentionally uses direct `swiftc`; it does not depend on SwiftPM.
+
+`toolchain/render-capture-v1.json` states these minimums, and
+`scripts/check-toolchain` refuses an older compiler or SDK. The build uses the
+SDK the installed tools select (`xcrun --show-sdk-path`) and stamps the exact
+`swiftc --version` line and that SDK's version and path into the binary. Every
+capture's environment fingerprint carries them, so a toolchain update gives a
+new fingerprint and needs a new baseline.
 
 ## Quick start
 
@@ -126,8 +133,9 @@ and exit 4 without weakening the SwiftTerm result.
 
 ## Troubleshooting
 
-- Toolchain check fails: install matching Command Line Tools and confirm
-  `/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk`.
+- Toolchain check fails: install Command Line Tools providing at least the
+  Swift and macOS SDK versions in `toolchain/render-capture-v1.json`, and
+  confirm `xcrun --show-sdk-path` selects that SDK.
 - Pin mismatch: check out the commit recorded by AI Survivors, rebuild, and
   confirm `--version`; do not patch the pin around an uncommitted binary.
 - Font unavailable: verify macOS can resolve `Menlo-Regular` at 18 points.
